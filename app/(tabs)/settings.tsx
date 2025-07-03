@@ -3,12 +3,16 @@ import { View, Text, Switch, TouchableOpacity, StyleSheet, Alert, Platform } fro
 import { LinearGradient } from 'expo-linear-gradient';
 import { Bell, Moon, Globe, Lock, Trash2, ChevronRight, User, Info, LogOut } from 'lucide-react-native';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useRouter } from 'expo-router';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [language, setLanguage] = useState('tr');
   const { theme, toggleTheme } = useTheme();
   const [showLangModal, setShowLangModal] = useState(false);
+  const { logout } = useAuth();
+  const router = useRouter();
 
   const handleAccountDelete = () => {
     Alert.alert('Hesap Sil', 'Hesabınızı silmek istediğinize emin misiniz?', [
@@ -20,7 +24,10 @@ export default function SettingsScreen() {
   const handleLogout = () => {
     Alert.alert('Çıkış Yap', 'Çıkış yapmak istediğinize emin misiniz?', [
       { text: 'İptal', style: 'cancel' },
-      { text: 'Çıkış Yap', style: 'destructive', onPress: () => {/* Çıkış işlemi */} },
+      { text: 'Çıkış Yap', style: 'destructive', onPress: () => {
+        logout();
+        router.replace('/(auth)/login');
+      } },
     ]);
   };
 
