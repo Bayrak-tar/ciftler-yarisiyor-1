@@ -5,19 +5,36 @@ import { Bell, Moon, Globe, Lock, Trash2, ChevronRight, User, Info, LogOut } fro
 import { useTheme } from '@/contexts/ThemeContext';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/contexts/AuthContext';
+import { deleteUser } from 'firebase/auth';
+import { deleteDoc, doc } from 'firebase/firestore';
+import { auth, db } from '@/firebaseConfig';
 
 export default function SettingsScreen() {
   const [notifications, setNotifications] = useState(true);
   const [language, setLanguage] = useState('tr');
   const { theme, toggleTheme } = useTheme();
   const [showLangModal, setShowLangModal] = useState(false);
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const router = useRouter();
 
   const handleAccountDelete = () => {
     Alert.alert('Hesap Sil', 'Hesabınızı silmek istediğinize emin misiniz?', [
       { text: 'İptal', style: 'cancel' },
-      { text: 'Sil', style: 'destructive', onPress: () => {/* Hesap silme işlemi */} },
+      { text: 'Sil', style: 'destructive', onPress: async () => {
+        try {
+          if (!user) throw new Error('Kullanıcı bulunamadı');
+          // Firestore'dan sil
+          await deleteDoc(doc(db, 'users', user.id));
+          // Auth'dan sil
+          if (typeof auth !== 'undefined' && auth.currentUser) {
+            await deleteUser(auth.currentUser);
+          }
+          logout();
+          router.replace('/(auth)/login');
+        } catch (e) {
+          Alert.alert('Hata', 'Hesap silinirken bir hata oluştu.');
+        }
+      } },
     ]);
   };
 
