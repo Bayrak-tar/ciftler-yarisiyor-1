@@ -24,6 +24,14 @@ export default function SettingsScreen() {
     ]);
   };
 
+  const handleAbout = () => {
+    Alert.alert(
+      'Hakkında',
+      'Çiftler Yarışıyor\nSürüm: 1.0.0\nBu uygulama çiftler için eğlenceli bir bilgi yarışması sunar.\nTelif © 2025',
+      [{ text: 'Kapat', style: 'cancel' }]
+    );
+  };
+
   // Dil değiştirme fonksiyonu
   const handleLanguageChange = () => {
     setShowLangModal(true);
@@ -102,7 +110,7 @@ export default function SettingsScreen() {
           <Text style={[styles.settingText, { color: textColor }]}>Profil Bilgileri</Text>
           <ChevronRight size={18} color="#8B5CF6" />
         </TouchableOpacity>
-        <TouchableOpacity style={[styles.settingItem, { backgroundColor: cardColor }]}>
+        <TouchableOpacity style={[styles.settingItem, { backgroundColor: cardColor }]} onPress={handleAbout}>
           <Info size={20} color="#8B5CF6" />
           <Text style={[styles.settingText, { color: textColor }]}>Hakkında</Text>
           <ChevronRight size={18} color="#8B5CF6" />
