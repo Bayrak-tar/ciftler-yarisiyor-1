@@ -33,7 +33,7 @@ const initialForm: QuestionDoc = {
   roundType: 'common_sense',
   questionText: '',
   answerType: 'text',
-  answers: ['', '', '', ''],
+  answers: ['', '', '', '', ''], // En popüler cevap için 5 cevap
   extra: {},
   questions: [
     { category: '', questionText: '', correctAnswer: '', choices: ['', '', '', ''] },
@@ -60,14 +60,16 @@ const AdminPanel: React.FC = () => {
     const { name, value } = e.target;
     if (name === 'roundType') {
       // roundType değişince formu sıfırla
-      setForm({ ...initialForm, roundType: value as RoundType });
+      const newForm = { ...initialForm, roundType: value as RoundType };
+      if (value === 'most_popular') {
+        newForm.answers = ['', '', '', '', '']; // 5 cevap için
+      }
+      setForm(newForm);
     } else if (form.roundType === 'most_popular' && name.startsWith('answer')) {
       const i = Number(name.replace('answer', ''));
-      const newAnswers = [...(form.answers || [])];
+      const newAnswers = [...(form.answers || ['', '', '', '', ''])];
       newAnswers[i] = value;
       setForm({ ...form, answers: newAnswers });
-    } else if (form.roundType === 'most_popular' && name === 'correctAnswer') {
-      setForm({ ...form, extra: { ...form.extra, correctAnswer: value } });
     } else if (form.roundType === 'general_knowledge' && typeof idx === 'number') {
       // Alt sorular için
       const newQuestions = [...(form.questions || [])];
@@ -109,7 +111,7 @@ const AdminPanel: React.FC = () => {
     } else if (form.roundType === 'most_popular') {
       data.questionText = form.questionText;
       data.answers = form.answers;
-      data.extra = { correctAnswer: form.extra?.correctAnswer };
+      data.extra = { description: 'Kullanıcılar en popüler 5 cevabı tahmin etmeye çalışacak' };
     } else if (form.roundType === 'general_knowledge') {
       data.questions = form.questions;
     }
@@ -168,24 +170,26 @@ const AdminPanel: React.FC = () => {
             <div>
               <label>Soru Metni:</label>
               <input name="questionText" value={form.questionText || ''} onChange={handleChange} required style={{ width: '100%', marginBottom: 8 }} />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Örnek: "Türkiye'de en çok tercih edilen tatil yerleri nelerdir?"
+              </small>
             </div>
             <div>
-              <label>Cevaplar:</label>
-              {(form.answers || []).map((cevap, idx) => (
+              <label>En Popüler 5 Cevap (Tahmin edilecek):</label>
+              {(form.answers || ['', '', '', '', '']).map((cevap, idx) => (
                 <input
                   key={idx}
                   name={`answer${idx}`}
                   value={cevap}
                   onChange={handleChange}
-                  placeholder={`Şık ${String.fromCharCode(65 + idx)}`}
+                  placeholder={`${idx + 1}. En popüler cevap`}
                   required
                   style={{ width: '100%', marginBottom: 4 }}
                 />
               ))}
-            </div>
-            <div>
-              <label>Doğru Cevap:</label>
-              <input name="correctAnswer" value={form.extra?.correctAnswer || ''} onChange={handleChange} required style={{ width: '100%', marginBottom: 8 }} />
+              <small style={{ color: '#666', fontSize: '12px' }}>
+                Kullanıcılar bu 5 cevabı tahmin etmeye çalışacak. En popüler olanından en az popüler olanına doğru sıralayın.
+              </small>
             </div>
           </>
         )}
@@ -237,12 +241,20 @@ const AdminPanel: React.FC = () => {
             )}
             {q.roundType === 'most_popular' && (
               <>
-                <span>{q.questionText}</span>
-                <ul>
-                  {(q.answers || []).map((cevap, idx) => (
-                    <li key={idx}>{String.fromCharCode(65 + idx)}: {cevap} {q.extra?.correctAnswer === cevap ? '(Doğru)' : ''}</li>
-                  ))}
-                </ul>
+                <span><strong>Soru:</strong> {q.questionText}</span>
+                <div style={{ marginTop: 8 }}>
+                  <strong>En Popüler 5 Cevap:</strong>
+                  <ol style={{ marginTop: 4, paddingLeft: 20 }}>
+                    {(q.answers || []).map((cevap, idx) => (
+                      <li key={idx} style={{ marginBottom: 2 }}>
+                        <span style={{ fontWeight: 'bold', color: '#8B5CF6' }}>{cevap}</span>
+                        <span style={{ fontSize: '12px', color: '#666', marginLeft: 8 }}>
+                          ({idx + 1}. sırada popüler)
+                        </span>
+                      </li>
+                    ))}
+                  </ol>
+                </div>
               </>
             )}
             {q.roundType === 'general_knowledge' && (

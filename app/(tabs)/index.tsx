@@ -134,13 +134,13 @@ export default function HomeScreen() {
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumberText}>1</Text>
               </View>
-              <Text style={styles.stepText}>Oyun modu seç ve eşleşmeyi bekle</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>Oyun modu seç ve eşleşmeyi bekle</Text>
             </View>
             <View style={styles.step}>
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumberText}>2</Text>
               </View>
-              <Text style={styles.stepText}>3 farklı turda rakiplerinle yarış</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>3 farklı turda rakiplerinle yarış</Text>
             </View>
             <View style={styles.step}>
               <View style={styles.stepNumber}>
