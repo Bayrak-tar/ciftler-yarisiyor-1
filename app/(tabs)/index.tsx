@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/AuthContext';
@@ -13,11 +12,12 @@ import { router } from 'expo-router';
 import { 
   Play, 
   Users, 
-  User, 
   Shuffle, 
   Trophy,
   Calendar,
-  Target
+  Target,
+  Plus,
+  UserPlus
 } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -26,33 +26,6 @@ export default function HomeScreen() {
   const { user } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-
-  const gameModes = [
-    {
-      id: 'couple-vs-couple',
-      title: 'Çift vs Çift',
-      description: 'İki çift birbirine karşı yarışır',
-      icon: Users,
-      color: ['#8B5CF6', '#A855F7'],
-      players: '4 Oyuncu',
-    },
-    {
-      id: 'individual-vs-individual',
-      title: 'Birey vs Birey',
-      description: 'İki tekil birey yarışır',
-      icon: User,
-      color: ['#14B8A6', '#06B6D4'],
-      players: '2 Oyuncu',
-    },
-    {
-      id: 'mixed-match',
-      title: 'Karışık Eşleşme',
-      description: 'Rastgele eşleşmeli çift yarışması',
-      icon: Shuffle,
-      color: ['#F97316', '#FB923C'],
-      players: '4 Oyuncu',
-    },
-  ];
 
   const stats = [
     { label: 'Oynanmış Oyun', value: user?.gamesPlayed || 0, icon: Calendar },
@@ -74,14 +47,14 @@ export default function HomeScreen() {
           
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              <User size={32} color="#8B5CF6" />
+              <Users size={32} color="#8B5CF6" />
             </View>
           </View>
         </Animated.View>
 
         <Animated.View entering={FadeInUp.delay(400)} style={styles.statsContainer}>
           {stats.map((stat, index) => (
-            <View key={index} style={[styles.statCard, { backgroundColor: isDark ? '#27272A' : 'rgba(255,255,255,0.2)' }] }>
+            <View key={index} style={[styles.statCard, { backgroundColor: isDark ? '#27272A' : 'rgba(255,255,255,0.2)' }]}>
               <stat.icon size={20} color="white" />
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
@@ -91,62 +64,126 @@ export default function HomeScreen() {
       </LinearGradient>
 
       <View style={styles.content}>
-        <Animated.Text entering={FadeInDown.delay(600)} style={[styles.sectionTitle, { color: isDark ? '#F3F4F6' : '#111827' }] }>
-          Oyun Modunu Seç
+        <Animated.Text entering={FadeInDown.delay(600)} style={[styles.sectionTitle, { color: isDark ? '#F3F4F6' : '#111827' }]}>
+          Karışık Eşleşme
         </Animated.Text>
 
-        {gameModes.map((mode, index) => (
-          <Animated.View
-            key={mode.id}
-            entering={FadeInDown.delay(800 + index * 200)}
+        {/* Hızlı Eşleşme */}
+        <Animated.View entering={FadeInDown.delay(800)}>
+          <TouchableOpacity
+            style={styles.gameModeCard}
+            onPress={() => router.push('/(tabs)/game?mode=mixed-match')}
+            activeOpacity={0.8}
           >
-            <TouchableOpacity
-              style={styles.gameModeCard}
-              onPress={() => router.push(`/(tabs)/game?mode=${mode.id}`)}
-              activeOpacity={0.8}
+            <LinearGradient
+              colors={['#F97316', '#FB923C']}
+              style={styles.gameModeGradient}
             >
-              <LinearGradient
-                colors={mode.color}
-                style={styles.gameModeGradient}
-              >
-                <View style={styles.gameModeHeader}>
-                  <mode.icon size={32} color="white" />
-                  <Text style={styles.playersText}>{mode.players}</Text>
-                </View>
-                
-                <View style={styles.gameModeContent}>
-                  <Text style={styles.gameModeTitle}>{mode.title}</Text>
-                  <Text style={styles.gameModeDescription}>{mode.description}</Text>
-                </View>
-                
-                <View style={styles.playButton}>
-                  <Play size={20} color="white" fill="white" />
-                </View>
-              </LinearGradient>
-            </TouchableOpacity>
-          </Animated.View>
-        ))}
+              <View style={styles.gameModeHeader}>
+                <Shuffle size={32} color="white" />
+                <Text style={styles.playersText}>4 Oyuncu</Text>
+              </View>
+              
+              <View style={styles.gameModeContent}>
+                <Text style={styles.gameModeTitle}>Hızlı Eşleşme</Text>
+                <Text style={styles.gameModeDescription}>
+                  Rastgele oyuncularla anında eşleş ve yarışmaya başla
+                </Text>
+              </View>
+              
+              <View style={styles.playButton}>
+                <Play size={20} color="white" fill="white" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
 
-        <Animated.View entering={FadeInDown.delay(1400)} style={[styles.howToPlay, { backgroundColor: isDark ? '#27272A' : 'white' }] }>
+        {/* Özel Oda Oluştur */}
+        <Animated.View entering={FadeInDown.delay(1000)}>
+          <TouchableOpacity
+            style={styles.gameModeCard}
+            onPress={() => router.push('/private-room/create')}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#14B8A6', '#06B6D4']}
+              style={styles.gameModeGradient}
+            >
+              <View style={styles.gameModeHeader}>
+                <Plus size={32} color="white" />
+                <Text style={styles.playersText}>Özel Oda</Text>
+              </View>
+              
+              <View style={styles.gameModeContent}>
+                <Text style={styles.gameModeTitle}>Özel Oda Oluştur</Text>
+                <Text style={styles.gameModeDescription}>
+                  Arkadaşlarınla özel bir oda oluştur ve davet et
+                </Text>
+              </View>
+              
+              <View style={styles.playButton}>
+                <UserPlus size={20} color="white" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+
+        {/* Odaya Katıl */}
+        <Animated.View entering={FadeInDown.delay(1200)}>
+          <TouchableOpacity
+            style={styles.gameModeCard}
+            onPress={() => router.push('/private-room/join')}
+            activeOpacity={0.8}
+          >
+            <LinearGradient
+              colors={['#8B5CF6', '#A855F7']}
+              style={styles.gameModeGradient}
+            >
+              <View style={styles.gameModeHeader}>
+                <Users size={32} color="white" />
+                <Text style={styles.playersText}>Katıl</Text>
+              </View>
+              
+              <View style={styles.gameModeContent}>
+                <Text style={styles.gameModeTitle}>Odaya Katıl</Text>
+                <Text style={styles.gameModeDescription}>
+                  Oda kodunu girerek arkadaşlarının odasına katıl
+                </Text>
+              </View>
+              
+              <View style={styles.playButton}>
+                <Play size={20} color="white" fill="white" />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+
+        <Animated.View entering={FadeInDown.delay(1400)} style={[styles.howToPlay, { backgroundColor: isDark ? '#27272A' : 'white' }]}>
           <Text style={[styles.howToPlayTitle, { color: isDark ? '#F3F4F6' : '#111827' }]}>Nasıl Oynanır?</Text>
           <View style={styles.steps}>
             <View style={styles.step}>
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumberText}>1</Text>
               </View>
-              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>Oyun modu seç ve eşleşmeyi bekle</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>
+                Hızlı eşleşme seç veya özel oda oluştur
+              </Text>
             </View>
             <View style={styles.step}>
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumberText}>2</Text>
               </View>
-              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>3 farklı turda rakiplerinle yarış</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>
+                Ortak akıl sorusuna takım arkadaşınla aynı cevabı ver
+              </Text>
             </View>
             <View style={styles.step}>
               <View style={styles.stepNumber}>
                 <Text style={styles.stepNumberText}>3</Text>
               </View>
-              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>En yüksek puanı al ve kazan!</Text>
+              <Text style={[styles.stepText, { color: isDark ? '#A1A1AA' : '#4B5563' }]}>
+                Benzer cevaplar yüksek puan getirir!
+              </Text>
             </View>
           </View>
         </Animated.View>

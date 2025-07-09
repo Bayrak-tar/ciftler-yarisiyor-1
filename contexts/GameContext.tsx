@@ -12,7 +12,9 @@ import {
   deleteDoc,
   serverTimestamp,
   arrayUnion,
-  arrayRemove
+  arrayRemove,
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { 
@@ -42,6 +44,8 @@ export type GameState = 'waiting' | 'starting' | 'playing' | 'finished' | 'scori
 export interface GameRoom {
   id: string;
   mode: GameMode;
+  isPrivate?: boolean;
+  ownerId?: string;
   players: Player[];
   teams: Team[];
   currentRound: GameRound;
@@ -98,6 +102,9 @@ interface GameContextType {
   isSearching: boolean;
   searchTimeLeft: number;
   joinMixedMatch: () => Promise<void>;
+  createPrivateRoom: () => Promise<string | null>;
+  joinPrivateRoom: (roomId: string) => Promise<boolean>;
+  startPrivateGame: (roomId: string) => Promise<void>;
   leaveRoom: () => void;
   submitAnswer: (answer: string) => Promise<void>;
   currentAnswer: string;
@@ -341,6 +348,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       const newRoom: Omit<GameRoom, 'id'> = {
         mode: 'mixed-match',
+        isPrivate: false,
         players: [newPlayer],
         teams,
         currentRound: 'common-mind',
@@ -361,6 +369,314 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     } catch (error) {
       console.error('Oda oluşturma hatası:', error);
       setIsSearching(false);
+    }
+  };
+
+  const createPrivateRoom = async (): Promise<string | null> => {
+    if (!user) return null;
+
+    try {
+      // Takımları oluştur
+      const teams: Team[] = [
+        {
+          id: 'team1',
+          name: 'Takım 1',
+          playerIds: [user.id],
+          color: '#8B5CF6'
+        },
+        {
+          id: 'team2',
+          name: 'Takım 2',
+          playerIds: [],
+          color: '#14B8A6'
+        }
+      ];
+
+      const newPlayer: Player = {
+        id: user.id,
+        username: user.username,
+        teamId: 'team1',
+      };
+
+      // Benzersiz oda ID'si oluştur
+      const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+      const newRoom: Omit<GameRoom, 'id'> = {
+        mode: 'mixed-match',
+        isPrivate: true,
+        ownerId: user.id,
+        players: [newPlayer],
+        teams,
+        currentRound: 'common-mind',
+        roundNumber: 1,
+        state: 'waiting',
+        scores: { team1: 0, team2: 0 },
+        maxPlayers: 4,
+        roundResults: [],
+        hasAnswered: {},
+        createdAt: serverTimestamp(),
+      };
+
+      // Özel oda ID'si ile oda oluştur
+      await setDoc(doc(db, 'gameRooms', roomId), newRoom);
+      const createdRoom = { id: roomId, ...newRoom } as GameRoom;
+      setCurrentRoom(createdRoom);
+      setupRoomListener(roomId);
+
+      return roomId;
+    } catch (error) {
+      console.error('Özel oda oluşturma hatası:', error);
+      return null;
+    }
+  };
+
+  const joinPrivateRoom = async (roomId: string): Promise<boolean> => {
+    if (!user) return false;
+
+    try {
+      // Odayı kontrol et
+      const roomDoc = await getDoc(doc(db, 'gameRooms', roomId));
+      if (!roomDoc.exists()) {
+        return false;
+      }
+
+      const roomData = { id: roomDoc.id, ...roomDoc.data() } as GameRoom;
+      
+      // Oda dolu mu kontrol et
+      if (roomData.players.length >= roomData.maxPlayers) {
+        return false;
+      }
+
+      // Kullanıcı zaten odada mı kontrol et
+      const isAlreadyInRoom = roomData.players.some(p => p.id === user.id);
+      if (isAlreadyInRoom) {
+        setCurrentRoom(roomData);
+        setupRoomListener(roomData.id);
+        return true;
+      }
+
+      // Takım ataması yap
+      let targetTeamId = '';
+      const team1PlayerCount = roomData.teams[0]?.playerIds.length || 0;
+      const team2PlayerCount = roomData.teams[1]?.playerIds.length || 0;
+      
+      if (team1PlayerCount <= team2PlayerCount) {
+        targetTeamId = roomData.teams[0].id;
+      } else {
+        targetTeamId = roomData.teams[1].id;
+      }
+
+      const newPlayer: Player = {
+        id: user.id,
+        username: user.username,
+        teamId: targetTeamId,
+      };
+
+      // Oyuncuyu ve takım bilgilerini güncelle
+      const updatedPlayers = [...roomData.players, newPlayer];
+      const updatedTeams = roomData.teams.map(team => {
+        if (team.id === targetTeamId) {
+          return {
+            ...team,
+            playerIds: [...team.playerIds, user.id]
+          };
+        }
+        return team;
+      });
+
+      await updateDoc(doc(db, 'gameRooms', roomId), {
+        players: updatedPlayers,
+        teams: updatedTeams,
+      });
+
+      const updatedRoom = { ...roomData, players: updatedPlayers, teams: updatedTeams };
+      setCurrentRoom(updatedRoom);
+      setupRoomListener(roomId);
+
+      return true;
+    } catch (error) {
+      console.error('Özel odaya katılma hatası:', error);
+      return false;
+    }
+  };
+
+  const startPrivateGame = async (roomId: string): Promise<void> => {
+    if (!user || !currentRoom || currentRoom.ownerId !== user.id) {
+      throw new Error('Sadece oda sahibi oyunu başlatabilir');
+    }
+
+    try {
+      // Eğer oda zaten 4 kişi ise direkt oyunu başlat
+      if (currentRoom.players.length >= 4) {
+        await updateDoc(doc(db, 'gameRooms', roomId), {
+          state: 'starting',
+          startedAt: serverTimestamp()
+        });
+        
+        setTimeout(() => startFirstRound(roomId), 3000);
+        return;
+      }
+
+      // Eksik oyuncu sayısını hesapla
+      const missingPlayers = 4 - currentRoom.players.length;
+      let addedPlayers = 0;
+
+      // Önce karışık eşleşme modunda bekleyen oyuncuları kontrol et
+      const waitingPlayersQuery = query(
+        collection(db, 'gameRooms'),
+        where('mode', '==', 'mixed-match'),
+        where('state', '==', 'waiting')
+      );
+
+      const waitingRoomsSnapshot = await getDocs(waitingPlayersQuery);
+      const availablePlayers: Player[] = [];
+
+      // Bekleyen oyuncuları topla
+      for (const roomDoc of waitingRoomsSnapshot.docs) {
+        const roomData = { id: roomDoc.id, ...roomDoc.data() } as GameRoom;
+        const waitingPlayers = roomData.players.filter(p => !p.isBot);
+        
+        for (const player of waitingPlayers) {
+          if (availablePlayers.length < missingPlayers) {
+            availablePlayers.push(player);
+            
+            // Bu oyuncuyu bekleyen odasından çıkar
+            const updatedWaitingPlayers = roomData.players.filter(p => p.id !== player.id);
+            if (updatedWaitingPlayers.length === 0) {
+              // Oda boş kalırsa sil
+              await deleteDoc(doc(db, 'gameRooms', roomDoc.id));
+            } else {
+              // Oyuncuyu odadan çıkar
+              const updatedWaitingTeams = roomData.teams.map(team => ({
+                ...team,
+                playerIds: team.playerIds.filter(id => id !== player.id)
+              }));
+              
+              await updateDoc(doc(db, 'gameRooms', roomDoc.id), {
+                players: updatedWaitingPlayers,
+                teams: updatedWaitingTeams
+              });
+            }
+          }
+        }
+      }
+
+      // Bulunan oyuncuları özel odaya ekle
+      const updatedPlayers = [...currentRoom.players];
+      const updatedTeams = currentRoom.teams.map(team => ({ ...team, playerIds: [...team.playerIds] }));
+
+      for (const newPlayer of availablePlayers) {
+        // Oyuncunun zaten odada olup olmadığını kontrol et
+        const isAlreadyInRoom = updatedPlayers.some(p => p.id === newPlayer.id);
+        if (isAlreadyInRoom) {
+          console.log(`⚠️ Oyuncu ${newPlayer.username} zaten odada, atlanıyor`);
+          continue;
+        }
+
+        // Takım ataması yap - daha az oyuncusu olan takıma ekle
+        let targetTeamId = '';
+        const team1Count = updatedTeams[0]?.playerIds.length || 0;
+        const team2Count = updatedTeams[1]?.playerIds.length || 0;
+        
+        if (team1Count <= team2Count) {
+          targetTeamId = updatedTeams[0].id;
+        } else {
+          targetTeamId = updatedTeams[1].id;
+        }
+
+        const playerWithTeam: Player = {
+          ...newPlayer,
+          teamId: targetTeamId
+        };
+
+        updatedPlayers.push(playerWithTeam);
+        
+        // Takım listesini güncelle
+        const teamIndex = updatedTeams.findIndex(team => team.id === targetTeamId);
+        if (teamIndex !== -1) {
+          updatedTeams[teamIndex].playerIds.push(newPlayer.id);
+        }
+        
+        addedPlayers++;
+        console.log(`✅ Oyuncu ${newPlayer.username} özel odaya eklendi (${targetTeamId})`);
+      }
+
+      // Hala eksik oyuncu varsa bot ekle
+      const stillMissingPlayers = 4 - updatedPlayers.length;
+      console.log(`🤖 Eksik oyuncu sayısı: ${stillMissingPlayers}`);
+      
+      if (stillMissingPlayers > 0) {
+        const usedBotNames = new Set<string>();
+        // Mevcut bot isimlerini kullanılmış olarak işaretle
+        updatedPlayers.filter(p => p.isBot).forEach(bot => {
+          usedBotNames.add(bot.username);
+        });
+
+        for (let i = 0; i < stillMissingPlayers; i++) {
+          const botId = `bot_${Date.now()}_${Math.random().toString(36).substring(2, 6)}_${i}`;
+          
+          let botName = '';
+          let attempts = 0;
+          do {
+            botName = botNames[Math.floor(Math.random() * botNames.length)];
+            attempts++;
+            // Sonsuz döngüyü önlemek için
+            if (attempts > 20) {
+              botName = `Bot ${i + 1}`;
+              break;
+            }
+          } while (usedBotNames.has(botName));
+          usedBotNames.add(botName);
+          
+          // Takım ataması - daha az oyuncusu olan takıma ekle
+          const currentTeam1Count = updatedTeams[0]?.playerIds.length || 0;
+          const currentTeam2Count = updatedTeams[1]?.playerIds.length || 0;
+          
+          let targetTeamId = '';
+          if (currentTeam1Count <= currentTeam2Count) {
+            targetTeamId = updatedTeams[0].id;
+          } else {
+            targetTeamId = updatedTeams[1].id;
+          }
+
+          const newBot: Player = {
+            id: botId,
+            username: botName,
+            teamId: targetTeamId,
+            isBot: true,
+          };
+
+          updatedPlayers.push(newBot);
+          
+          // Takım listesini güncelle
+          const teamIndex = updatedTeams.findIndex(team => team.id === targetTeamId);
+          if (teamIndex !== -1) {
+            updatedTeams[teamIndex].playerIds.push(botId);
+          }
+          
+          console.log(`🤖 Bot ${botName} (${botId}) ${targetTeamId} takımına eklendi`);
+        }
+      }
+
+      console.log(`🎮 Özel oyun başlatılıyor:`);
+      console.log(`👥 Toplam oyuncu: ${updatedPlayers.length}`);
+      console.log(`🤝 Karışık eşleşmeden eklenen: ${addedPlayers}`);
+      console.log(`🤖 Bot eklenen: ${stillMissingPlayers}`);
+
+      // Odayı güncelle ve oyunu başlat
+      await updateDoc(doc(db, 'gameRooms', roomId), {
+        players: updatedPlayers,
+        teams: updatedTeams,
+        state: 'starting',
+        startedAt: serverTimestamp()
+      });
+
+      // İlk soruyu yükle
+      setTimeout(() => startFirstRound(roomId), 3000);
+
+    } catch (error) {
+      console.error('Özel oyun başlatma hatası:', error);
+      throw error;
     }
   };
 
@@ -977,6 +1293,22 @@ Cevap:`;
         state: 'finished' // Şimdilik tek tur
       });
 
+      // Özel odaları 5 dakika sonra otomatik sil
+      const finishedRoomSnapshot = await getDocs(query(collection(db, 'gameRooms'), where('__name__', '==', roomId)));
+      if (!finishedRoomSnapshot.empty) {
+        const roomData = { id: finishedRoomSnapshot.docs[0].id, ...finishedRoomSnapshot.docs[0].data() } as GameRoom;
+        if (roomData.isPrivate) {
+          setTimeout(async () => {
+            try {
+              await deleteDoc(doc(db, 'gameRooms', roomId));
+              console.log(`🗑️ Özel oda ${roomId} otomatik olarak silindi`);
+            } catch (error) {
+              console.error('Oda silme hatası:', error);
+            }
+          }, 5 * 60 * 1000); // 5 dakika
+        }
+      }
+
       console.log('✅ Puan hesaplama tamamlandı!');
       console.log('🏆 Final Skorlar:', newScores);
 
@@ -1193,6 +1525,9 @@ Cevap:`;
       isSearching,
       searchTimeLeft,
       joinMixedMatch,
+      createPrivateRoom,
+      joinPrivateRoom,
+      startPrivateGame,
       leaveRoom,
       submitAnswer,
       currentAnswer,

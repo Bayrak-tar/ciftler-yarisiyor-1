@@ -17,7 +17,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function GameScreen() {
-  const { mode } = useLocalSearchParams<{ mode: string }>();
+  const { mode, roomId } = useLocalSearchParams<{ mode: string; roomId?: string }>();
   const { 
     currentRoom, 
     isSearching, 
@@ -29,11 +29,10 @@ export default function GameScreen() {
     setCurrentAnswer
   } = useGame();
   const { user } = useAuth();
-  const [timeLeft, setTimeLeft] = useState(20); // 20 saniye süre
+  const [timeLeft, setTimeLeft] = useState(20);
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  // Tüm hook'lar burada, koşulsuz ve sadece bir kez çağrılır
   useEffect(() => {
     if (!currentRoom && mode === 'mixed-match' && !isSearching) {
       joinMixedMatch();
@@ -42,7 +41,7 @@ export default function GameScreen() {
 
   useEffect(() => {
     if (currentRoom?.state === 'playing' && currentRoom.currentQuestion) {
-      setTimeLeft(20); // 20 saniye başlat
+      setTimeLeft(20);
       const timer = setInterval(() => {
         setTimeLeft(prev => {
           if (prev <= 1) {
@@ -77,7 +76,6 @@ export default function GameScreen() {
     }
   };
 
-  // Kullanıcının cevap verip vermediğini kontrol et
   const hasUserAnswered = user ? currentRoom?.hasAnswered?.[user.id] : false;
 
   // Arama ekranı
@@ -125,22 +123,47 @@ export default function GameScreen() {
   if (!currentRoom) {
     return (
       <View style={[styles.container, { backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}> 
-        <Text style={{ color: isDark ? 'white' : 'black', fontWeight: 'bold', fontSize: 18, marginTop: 32 }}>Oyun odası bulunamadı</Text>
-        <Text style={{ color: isDark ? '#A1A1AA' : '#6B7280', marginTop: 12, fontSize: 15, textAlign: 'center', paddingHorizontal: 24 }}>
-          Oyun odası bulunamadı. Yeni bir oyun başlatmak için lütfen tekrar deneyin veya ana ekrana dönün.
-        </Text>
-        <TouchableOpacity
-          style={{ marginTop: 32, backgroundColor: '#8B5CF6', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 32, alignSelf: 'center' }}
-          onPress={() => joinMixedMatch()}
+        <LinearGradient
+          colors={isDark ? ['#232136', '#18181B'] : ['#F97316', '#FB923C']}
+          style={styles.header}
         >
-          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Tekrar Dene</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={{ marginTop: 16, backgroundColor: '#F3F4F6', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 28, alignSelf: 'center' }}
-          onPress={() => router.back()}
-        >
-          <Text style={{ color: isDark ? '#A1A1AA' : '#6B7280', fontWeight: 'bold', fontSize: 15 }}>Ana Ekrana Dön</Text>
-        </TouchableOpacity>
+          <View style={styles.headerContent}>
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={() => router.back()}
+            >
+              <ArrowLeft size={24} color="white" />
+            </TouchableOpacity>
+            
+            <Text style={styles.headerTitle}>Oyun Bulunamadı</Text>
+            
+            <View style={styles.headerRight} />
+          </View>
+        </LinearGradient>
+
+        <View style={styles.content}>
+          <View style={[styles.errorCard, { backgroundColor: isDark ? '#27272A' : 'white' }]}>
+            <Shuffle size={48} color="#EF4444" />
+            <Text style={[styles.errorTitle, { color: isDark ? '#F3F4F6' : '#111827' }]}>
+              Oyun Odası Bulunamadı
+            </Text>
+            <Text style={[styles.errorDescription, { color: isDark ? '#A1A1AA' : '#6B7280' }]}>
+              Oyun odası bulunamadı. Yeni bir oyun başlatmak için lütfen tekrar deneyin.
+            </Text>
+            
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={() => joinMixedMatch()}
+            >
+              <LinearGradient
+                colors={['#F97316', '#FB923C']}
+                style={styles.retryButtonGradient}
+              >
+                <Text style={styles.retryButtonText}>Tekrar Dene</Text>
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
+        </View>
       </View>
     );
   }
@@ -161,7 +184,9 @@ export default function GameScreen() {
           
           <View style={styles.headerCenter}>
             <Shuffle size={24} color="white" />
-            <Text style={styles.headerTitle}>Karışık Eşleşme</Text>
+            <Text style={styles.headerTitle}>
+              {currentRoom.isPrivate ? 'Özel Oda' : 'Karışık Eşleşme'}
+            </Text>
           </View>
           
           <View style={styles.headerRight}>
@@ -248,7 +273,7 @@ export default function GameScreen() {
           <Animated.View entering={FadeInDown.delay(600)} style={styles.questionContainer}>
             <View style={[styles.questionCard, { backgroundColor: isDark ? '#27272A' : 'white' }]}>
               <View style={styles.questionHeader}>
-                <Text style={styles.roundBadge}>1. TUR - ORTAK AKIL</Text>
+                <Text style={styles.roundBadge}>ORTAK AKIL</Text>
                 <View style={styles.questionTimer}>
                   <Clock size={16} color={timeLeft <= 5 ? "#EF4444" : "#F97316"} />
                   <Text style={[styles.questionTimerText, { color: timeLeft <= 5 ? "#EF4444" : "#F97316" }]}>{timeLeft}s</Text>
@@ -322,7 +347,7 @@ export default function GameScreen() {
               {currentRoom.roundResults && currentRoom.roundResults.length > 0 && (
                 <View style={styles.detailedResults}>
                   <Text style={[styles.detailsTitle, { color: isDark ? '#F3F4F6' : '#111827' }]}>
-                    Tur Detayları
+                    Sonuçlar
                   </Text>
                   
                   {currentRoom.roundResults.map((result, index) => (
@@ -394,10 +419,21 @@ export default function GameScreen() {
                 style={styles.playAgainButton}
                 onPress={() => {
                   leaveRoom();
-                  router.back();
+                  if (currentRoom?.isPrivate) {
+                    router.replace('/private-room/create');
+                  } else {
+                    router.back();
+                  }
                 }}
               >
-                <Text style={styles.playAgainText}>Ana Menüye Dön</Text>
+                <LinearGradient
+                  colors={['#F97316', '#FB923C']}
+                  style={styles.playAgainGradient}
+                >
+                  <Text style={styles.playAgainText}>
+                    {currentRoom?.isPrivate ? 'Tekrar Oyna' : 'Ana Menüye Dön'}
+                  </Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -435,7 +471,7 @@ const styles = StyleSheet.create({
     color: 'white',
   },
   headerRight: {
-    width: 40,
+    width: 80,
     alignItems: 'flex-end',
   },
   gameTimer: {
@@ -512,6 +548,48 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontFamily: 'Inter-SemiBold',
+  },
+  errorCard: {
+    backgroundColor: 'white',
+    borderRadius: 20,
+    padding: 32,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+    marginTop: 40,
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontFamily: 'Inter-Bold',
+    color: '#111827',
+    marginTop: 16,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorDescription: {
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  retryButton: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  retryButtonGradient: {
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: 'white',
   },
   sectionTitle: {
     fontSize: 20,
@@ -793,10 +871,13 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Bold',
   },
   playAgainButton: {
-    backgroundColor: '#F97316',
-    paddingHorizontal: 32,
+    borderRadius: 16,
+    overflow: 'hidden',
+    width: '100%',
+  },
+  playAgainGradient: {
     paddingVertical: 16,
-    borderRadius: 12,
+    alignItems: 'center',
   },
   playAgainText: {
     fontSize: 16,
