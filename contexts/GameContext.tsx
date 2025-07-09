@@ -33,6 +33,7 @@ import {
   calculateCategorySimilarity,
   a
 } from '@/utils/botPatterns';
+import axios from 'axios';
 
 export type GameMode = 'couple-vs-couple' | 'individual-vs-individual' | 'mixed-match';
 export type GameRound = 'common-mind' | 'popular-answer' | 'general-knowledge';
@@ -654,54 +655,52 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // Gelişmiş AI ile bot cevabı üretme fonksiyonu
+  // Firebaseden soruya göre bot cevabı üret
   const generateAIBotAnswer = async (questionText: string): Promise<string> => {
     try {
-      console.log(`🧠 Gelişmiş bot cevabı üretiliyor: "${questionText}"`);
-      
-      // Debug için pattern matching test et
-      if (questionText.includes('kahvaltılık')) {
-        console.log('🧪 Kahvaltılık sorusu tespit edildi, pattern matching test ediliyor...');
-        testPatternMatching(questionText);
+      // 1. Firebaseden soruyu bul
+      const questionsRef = collection(db, 'questions');
+      const qSnapshot = await getDocs(query(questionsRef, where('questionText', '==', questionText)));
+      let questionObj: any = null;
+      if (!qSnapshot.empty) {
+        questionObj = qSnapshot.docs[0].data();
       }
-      
-      // Önce gelişmiş akıllı sistemimizi kullan
-      const smartAnswer = generateAdvancedSmartAnswer(questionText);
-      if (smartAnswer !== 'bilinmiyor') {
-        console.log(`✅ Gelişmiş akıllı sistem cevabı: "${smartAnswer}"`);
-        return smartAnswer;
+
+      // 2. Soru tipine ve kategoriye göre prompt hazırla
+      let prompt = '';
+      let category = questionObj?.category || '';
+      if (category) {
+        prompt = `Kategori: ${category}\nSoru: ${questionText}\n\nKurallar:\n- Sadece 1 kelimeyle cevap ver.\n- Cevap kategoriye uygun olmalı.\n- Türkçe yaz.\n\nCevap:`;
+      } else {
+        prompt = `Soru: ${questionText}\n\nKurallar:\n- Sadece 1 kelimeyle cevap ver.\n- Türkçe yaz.\n\nCevap:`;
       }
-      
-      // Akıllı fallback sistemi
-      const fallbackAnswer = generateSmartFallbackAnswer(questionText);
-      if (fallbackAnswer !== 'bilinmiyor') {
-        console.log(`✅ Akıllı fallback cevabı: "${fallbackAnswer}"`);
-        return fallbackAnswer;
+
+      // 3. AI'dan cevap al
+      let aiAnswer = await tryFreeAIAPIs(prompt); // prompt artık dinamik
+      aiAnswer = aiAnswer?.trim().toLowerCase();
+
+      // 4. Kategoriye göre doğrula ve fallback uygula
+      if (category === 'içecek') {
+        const validDrinks = ['su', 'çay', 'kahve', 'ayran', 'kola', 'meşrubat', 'soda', 'şalgam'];
+        if (!validDrinks.includes(aiAnswer)) return 'su';
       }
-      
-      // Ücretsiz AI API'lerini deneyelim
-      const aiAnswer = await tryFreeAIAPIs(questionText);
-      if (aiAnswer && aiAnswer !== 'bilinmiyor') {
-        console.log(`✅ Ücretsiz AI API cevabı: "${aiAnswer}"`);
+      // Diğer kategoriler için de benzer kontroller eklenebilir
+
+      // AI cevabı mantıklıysa döndür
+      if (aiAnswer && aiAnswer.length > 1 && aiAnswer !== 'bilinmiyor') {
         return aiAnswer;
       }
-      
+
+      // Fallback: gelişmiş ve basit sistemleri sırayla dene
+      const smartAnswer = generateAdvancedSmartAnswer(questionText);
+      if (smartAnswer !== 'bilinmiyor') return smartAnswer;
+      const fallbackAnswer = generateSmartFallbackAnswer(questionText);
+      if (fallbackAnswer !== 'bilinmiyor') return fallbackAnswer;
+      return generateReliableFallbackAnswer(questionText);
     } catch (error) {
-      console.error('❌ AI API hatası:', error);
+      console.error('❌ AI Bot cevap üretim hatası:', error);
+      return generateReliableFallbackAnswer(questionText);
     }
-    
-    // Son çare güvenilir fallback - asla boş döndürme
-    const reliableAnswer = generateReliableFallbackAnswer(questionText);
-    console.log(`🔄 Son çare fallback cevabı: "${reliableAnswer}"`);
-    
-    // Eğer hala boş/undefined gelirse garantili cevap
-    if (!reliableAnswer || reliableAnswer === 'bilinmiyor' || reliableAnswer.trim().length === 0) {
-      const guaranteedAnswer = universalAnswers[Math.floor(Math.random() * universalAnswers.length)];
-      console.log(`🆘 Garantili son çare cevabı: "${guaranteedAnswer}"`);
-      return guaranteedAnswer;
-    }
-    
-    return reliableAnswer;
   };
 
   // Ücretsiz AI API'leri deneme
@@ -734,13 +733,9 @@ KURALLAR:
 
 Cevap:`;
 
-      const response = await fetch('https://api-inference.huggingface.co/models/microsoft/DialoGPT-medium', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_HUGGING_FACE_API_KEY || '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'}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const response = await axios.post(
+        'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
+        {
           inputs: prompt,
           parameters: {
             max_new_tokens: 10,
@@ -748,28 +743,24 @@ Cevap:`;
             do_sample: true,
             top_p: 0.9
           }
-        }),
-      });
-      
-      if (response.ok) {
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          console.error('❌ API yanıt formatı geçersiz:', contentType);
-          return 'bilinmiyor';
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_HUGGING_FACE_API_KEY || (globalThis as any).expo?.extra?.EXPO_PUBLIC_HUGGING_FACE_API_KEY || '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'}`,
+            'Content-Type': 'application/json',
+          }
         }
-        
-        const data = await response.json();
+      );
+      if (response.status === 200 && response.data) {
+        let data = response.data;
         let aiAnswer = '';
-        
         if (Array.isArray(data) && data[0]?.generated_text) {
           aiAnswer = data[0].generated_text.trim();
         } else if (data.generated_text) {
           aiAnswer = data.generated_text.trim();
         }
-        
-        // Prompt'u temizle ve sadece cevabı al
         aiAnswer = aiAnswer.replace(prompt, '').trim();
-        
+
         // Sadece ilk kelimeyi al ve temizle
         aiAnswer = aiAnswer.split(/\s+/)[0].toLowerCase().replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]/g, '');
         
@@ -780,8 +771,8 @@ Cevap:`;
           console.log(`⚠️ AI cevabı çok kısa: "${aiAnswer}"`);
         }
       } else {
-        const errorText = await response.text().catch(() => 'Yanıt okunamadı');
-        console.error('❌ Hugging Face API başarısız:', response.status, errorText);
+        console.error('❌ API yanıt formatı geçersiz:', response.status);
+        return 'bilinmiyor';
       }
     } catch (error) {
       if (error instanceof Error) {
@@ -1177,6 +1168,25 @@ Cevap:`;
     console.log('🚪 Oda başarıyla terk edildi, tüm state\'ler sıfırlandı');
   };
 
+  // Debug amaçlı pattern matching fonksiyonu
+  function testPatternMatching(question: string) {
+    console.log('🔎 testPatternMatching çalıştı:', question);
+    const patterns = [
+      { name: 'kahvaltılık', regex: /kahvaltı|kahvaltılık/i },
+      { name: 'içecek', regex: /içecek/i },
+      { name: 'meyve', regex: /meyve/i },
+      { name: 'şehir', regex: /şehir|il/i },
+      { name: 'renk', regex: /renk/i },
+      { name: 'hayvan', regex: /hayvan/i },
+      { name: 'film', regex: /film/i },
+    ];
+    patterns.forEach(p => {
+      if (p.regex.test(question)) {
+        console.log(`Pattern eşleşti: ${p.name}`);
+      }
+    });
+  }
+
   return (
     <GameContext.Provider value={{
       currentRoom,
@@ -1200,3 +1210,38 @@ export function useGame() {
   }
   return context;
 }
+
+// OpenAI GPT-4o-mini ile bilgi yarışması botu
+export const getBotAnswer = async (userPrompt: string): Promise<string> => {
+  try {
+    const response = await axios.post(
+      'https://api.openai.com/v1/chat/completions',
+      {
+        model: 'gpt-4o-mini',
+        store: true,
+        messages: [
+          { role: 'system', content: 'Sen bilgi yarışması oynayan, kısa ve net cevaplar veren bir Türkçe botsun. Sadece cevabı ver.' },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.7,
+        max_tokens: 50,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: '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',
+        },
+      }
+    );
+    const botReply = response.data.choices[0].message.content.trim();
+    return botReply;
+  } catch (error: unknown) {
+    if (typeof error === 'object' && error !== null && 'response' in error) {
+      // @ts-ignore
+      console.error('Bot cevap alma hatası:', error.response?.data || error.message);
+    } else {
+      console.error('Bot cevap alma hatası:', error);
+    }
+    return 'Bir hata oluştu.';
+  }
+};

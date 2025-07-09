@@ -14,6 +14,7 @@ import { useLocalSearchParams, router } from 'expo-router';
 import { Users, User, Shuffle, Clock, ArrowLeft, Loader, Send, Trophy, Target, CircleCheck as CheckCircle } from 'lucide-react-native';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function GameScreen() {
   const { mode } = useLocalSearchParams<{ mode: string }>();
@@ -27,15 +28,17 @@ export default function GameScreen() {
     currentAnswer,
     setCurrentAnswer
   } = useGame();
+  const { user } = useAuth();
   const [timeLeft, setTimeLeft] = useState(20); // 20 saniye süre
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
+  // Tüm hook'lar burada, koşulsuz ve sadece bir kez çağrılır
   useEffect(() => {
-    if (mode === 'mixed-match' && !currentRoom && !isSearching) {
+    if (!currentRoom && mode === 'mixed-match' && !isSearching) {
       joinMixedMatch();
     }
-  }, [mode]);
+  }, [currentRoom, mode, isSearching]);
 
   useEffect(() => {
     if (currentRoom?.state === 'playing' && currentRoom.currentQuestion) {
@@ -69,14 +72,13 @@ export default function GameScreen() {
   };
 
   const handleSubmitAnswer = () => {
-    if (currentAnswer.trim() && !currentRoom?.hasAnswered?.[currentRoom.players.find(p => p.username === currentRoom.players.find(player => !player.isBot)?.username)?.id || '']) {
+    if (currentAnswer.trim() && !hasUserAnswered) {
       submitAnswer(currentAnswer);
     }
   };
 
   // Kullanıcının cevap verip vermediğini kontrol et
-  const userPlayer = currentRoom?.players.find(p => !p.isBot);
-  const hasUserAnswered = userPlayer ? currentRoom?.hasAnswered?.[userPlayer.id] : false;
+  const hasUserAnswered = user ? currentRoom?.hasAnswered?.[user.id] : false;
 
   // Arama ekranı
   if (isSearching) {
@@ -122,8 +124,23 @@ export default function GameScreen() {
 
   if (!currentRoom) {
     return (
-      <View style={[styles.container, { backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}>
-        <Text style={{ color: isDark ? 'white' : 'black' }}>Oyun odası bulunamadı</Text>
+      <View style={[styles.container, { backgroundColor: isDark ? '#18181B' : '#F8FAFC' }]}> 
+        <Text style={{ color: isDark ? 'white' : 'black', fontWeight: 'bold', fontSize: 18, marginTop: 32 }}>Oyun odası bulunamadı</Text>
+        <Text style={{ color: isDark ? '#A1A1AA' : '#6B7280', marginTop: 12, fontSize: 15, textAlign: 'center', paddingHorizontal: 24 }}>
+          Oyun odası bulunamadı. Yeni bir oyun başlatmak için lütfen tekrar deneyin veya ana ekrana dönün.
+        </Text>
+        <TouchableOpacity
+          style={{ marginTop: 32, backgroundColor: '#8B5CF6', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 32, alignSelf: 'center' }}
+          onPress={() => joinMixedMatch()}
+        >
+          <Text style={{ color: 'white', fontWeight: 'bold', fontSize: 16 }}>Tekrar Dene</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ marginTop: 16, backgroundColor: '#F3F4F6', borderRadius: 8, paddingVertical: 10, paddingHorizontal: 28, alignSelf: 'center' }}
+          onPress={() => router.back()}
+        >
+          <Text style={{ color: isDark ? '#A1A1AA' : '#6B7280', fontWeight: 'bold', fontSize: 15 }}>Ana Ekrana Dön</Text>
+        </TouchableOpacity>
       </View>
     );
   }
