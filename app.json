@@ -22,6 +22,9 @@
     "plugins": ["expo-router", "expo-font", "expo-web-browser"],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "EXPO_PUBLIC_HUGGING_FACE_API_KEY": "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"
     }
   }
 }
