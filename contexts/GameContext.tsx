@@ -36,6 +36,8 @@ import {
   a
 } from '@/utils/botPatterns';
 import axios from 'axios';
+import Constants from 'expo-constants';
+import { createUltraForcePrompt, ultraForceValidation } from '../utils/AI_BOT_INTEGRATION';
 
 export type GameMode = 'couple-vs-couple' | 'individual-vs-individual' | 'mixed-match';
 export type GameRound = 'common-mind' | 'popular-answer' | 'general-knowledge';
@@ -850,7 +852,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      console.log(`🤖 ${botPlayers.length} bot için AI cevap üretiliyor: "${questionText}"`);
+      console.log(`🤖 ${botPlayers.length} bot için AI cevaplar üretiliyor: "${questionText}"`);
       
       const botAnswers: { [key: string]: string } = {};
       
@@ -982,18 +984,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         questionObj = qSnapshot.docs[0].data();
       }
 
-      // 2. Soru tipine ve kategoriye göre prompt hazırla
-      let prompt = '';
+      // 2. Soru tipine ve kategoriye göre prompt hazırla (merkezi dosyadan)
       let category = questionObj?.category || '';
-      if (category) {
-        prompt = `Kategori: ${category}\nSoru: ${questionText}\n\nKurallar:\n- Sadece 1 kelimeyle cevap ver.\n- Cevap kategoriye uygun olmalı.\n- Türkçe yaz.\n\nCevap:`;
-      } else {
-        prompt = `Soru: ${questionText}\n\nKurallar:\n- Sadece 1 kelimeyle cevap ver.\n- Türkçe yaz.\n\nCevap:`;
-      }
+      const prompt = createUltraForcePrompt(category, questionText);
 
-      // 3. AI'dan cevap al
-      let aiAnswer = await tryFreeAIAPIs(prompt); // prompt artık dinamik
+      // 3. AI'dan cevap al (promptu merkezi dosyadan al)
+      let aiAnswer = await getGeminiBotAnswer(prompt); // Gemini API ile cevap al
       aiAnswer = aiAnswer?.trim().toLowerCase();
+      // Ultra sıkı validasyon uygula
+      try {
+        aiAnswer = ultraForceValidation(aiAnswer);
+      } catch (e) {
+        aiAnswer = '';
+      }
 
       // 4. Kategoriye göre doğrula ve fallback uygula
       if (category === 'içecek') {
@@ -1008,101 +1011,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Fallback: gelişmiş ve basit sistemleri sırayla dene
-      const smartAnswer = generateAdvancedSmartAnswer(questionText);
-      if (smartAnswer !== 'bilinmiyor') return smartAnswer;
-      const fallbackAnswer = generateSmartFallbackAnswer(questionText);
-      if (fallbackAnswer !== 'bilinmiyor') return fallbackAnswer;
-      return generateReliableFallbackAnswer(questionText);
+      let smartAnswer = generateAdvancedSmartAnswer(questionText);
+      if (smartAnswer !== 'bilinmiyor') return smartAnswer.split(/\s+/)[0];
+      let fallbackAnswer = generateSmartFallbackAnswer(questionText);
+      if (fallbackAnswer !== 'bilinmiyor') return fallbackAnswer.split(/\s+/)[0];
+      return generateReliableFallbackAnswer(questionText).split(/\s+/)[0];
     } catch (error) {
       console.error('❌ AI Bot cevap üretim hatası:', error);
-      return generateReliableFallbackAnswer(questionText);
+      return generateReliableFallbackAnswer(questionText).split(/\s+/)[0];
     }
   };
-
-  // Ücretsiz AI API'leri deneme
-  const tryFreeAIAPIs = async (questionText: string): Promise<string> => {
-    try {
-      console.log(`🤖 AI'ya soru soruluyor: "${questionText}"`);
-      
-      // Kapsamlı Türkçe prompt ile tek kelime cevap talep et
-      const prompt = `Soru: "${questionText}"
-
-Bu soruyu analiz et ve tek kelimelik doğru cevap ver. 
-
-KURALLAR:
-- Sadece 1 kelime olmalı
-- Soruya tam uygun olmalı  
-- Türkçe olmalı
-- Mantıklı olmalı
-
-ÖRNEKLER:
-- Kahvaltılık sorusu → "ekmek", "peynir", "yumurta", "simit"
-- Film türü sorusu → "komedi", "aksiyon", "drama"
-- İçecek sorusu → "su", "çay", "kahve"  
-- Sosyal medya sorusu → "whatsapp", "instagram", "facebook"
-- Tatlı sorusu → "baklava", "künefe", "muhallebi"
-- Meyve sorusu → "elma", "muz", "portakal"
-- Şehir sorusu → "istanbul", "ankara", "izmir"
-- Hayvan sorusu → "kedi", "köpek", "kuş"
-- Renk sorusu → "mavi", "kırmızı", "yeşil"
-- Giyim sorusu → "tişört", "pantolon", "elbise"
-
-Cevap:`;
-
-      const response = await axios.post(
-        'https://api-inference.huggingface.co/models/mistralai/Mixtral-8x7B-Instruct-v0.1',
-        {
-          inputs: prompt,
-          parameters: {
-            max_new_tokens: 10,
-            temperature: 0.5,
-            do_sample: true,
-            top_p: 0.9
-          }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${process.env.EXPO_PUBLIC_HUGGING_FACE_API_KEY || (globalThis as any).expo?.extra?.EXPO_PUBLIC_HUGGING_FACE_API_KEY || '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'}`,
-            'Content-Type': 'application/json',
-          }
-        }
-      );
-      if (response.status === 200 && response.data) {
-        let data = response.data;
-        let aiAnswer = '';
-        if (Array.isArray(data) && data[0]?.generated_text) {
-          aiAnswer = data[0].generated_text.trim();
-        } else if (data.generated_text) {
-          aiAnswer = data.generated_text.trim();
-        }
-        aiAnswer = aiAnswer.replace(prompt, '').trim();
-
-        // Sadece ilk kelimeyi al ve temizle
-        aiAnswer = aiAnswer.split(/\s+/)[0].toLowerCase().replace(/[^a-zA-ZçğıöşüÇĞİÖŞÜ]/g, '');
-        
-        if (aiAnswer.length >= 2) {
-          console.log(`✅ AI tek kelime cevabı: "${aiAnswer}"`);
-          return aiAnswer;
-        } else {
-          console.log(`⚠️ AI cevabı çok kısa: "${aiAnswer}"`);
-        }
-      } else {
-        console.error('❌ API yanıt formatı geçersiz:', response.status);
-        return 'bilinmiyor';
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error('❌ Hugging Face API hatası:', error.message);
-      } else {
-        console.error('❌ Bilinmeyen Hugging Face API hatası:', error);
-      }
-    }
-    
-    console.log('🔄 AI başarısız, fallback kullanılıyor...');
-    return 'bilinmiyor';
-  };
-
-  // Import edilen güvenilir fallback kullanılıyor
 
   // Gelişmiş benzer cevap üretimi
   const generateAISimilarAnswer = async (baseAnswer: string, questionText: string): Promise<string> => {
@@ -1547,35 +1465,50 @@ export function useGame() {
 }
 
 // OpenAI GPT-4o-mini ile bilgi yarışması botu
+// HUGGING FACE API KALDIRILDI, OpenAI API da kullanılmıyor, bu fonksiyon devre dışı bırakıldı
 export const getBotAnswer = async (userPrompt: string): Promise<string> => {
+  // Sadece fallback algoritmalar kullanılacak
+  // Gelişmiş ve basit sistemleri sırayla dene
+  const smartAnswer = generateAdvancedSmartAnswer(userPrompt);
+  if (smartAnswer !== 'bilinmiyor') return smartAnswer;
+  const fallbackAnswer = generateSmartFallbackAnswer(userPrompt);
+  if (fallbackAnswer !== 'bilinmiyor') return fallbackAnswer;
+  return generateReliableFallbackAnswer(userPrompt);
+};
+
+// Gemini API ile cevap üretme fonksiyonu
+// Gemini API anahtarını güvenli şekilde al
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || Constants.expoConfig?.extra?.GEMINI_API_KEY || 'AIzaSyB5fD8MqTNudeaYAz6hOnvUz8egfC7qqKM';
+console.log('GEMINI_API_KEY:', GEMINI_API_KEY); // Anahtarın doğru okunup okunmadığını görmek için
+
+export const getGeminiBotAnswer = async (userPrompt: string): Promise<string> => {
   try {
     const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent',
       {
-        model: 'gpt-4o-mini',
-        store: true,
-        messages: [
-          { role: 'system', content: 'Sen bilgi yarışması oynayan, kısa ve net cevaplar veren bir Türkçe botsun. Sadece cevabı ver.' },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 50,
+        contents: [
+          {
+            parts: [
+              { text: userPrompt }
+            ]
+          }
+        ]
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          Authorization: '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',
-        },
+          'X-goog-api-key': GEMINI_API_KEY,
+        }
       }
     );
-    const botReply = response.data.choices[0].message.content.trim();
-    return botReply;
+    const geminiReply = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'Bir hata oluştu.';
+    return geminiReply;
   } catch (error: unknown) {
     if (typeof error === 'object' && error !== null && 'response' in error) {
       // @ts-ignore
-      console.error('Bot cevap alma hatası:', error.response?.data || error.message);
+      console.error('Gemini bot cevap alma hatası:', error.response?.data || error.message);
     } else {
-      console.error('Bot cevap alma hatası:', error);
+      console.error('Gemini bot cevap alma hatası:', error);
     }
     return 'Bir hata oluştu.';
   }
